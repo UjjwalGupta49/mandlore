@@ -8,6 +8,7 @@
 #include "engine/ExecutionEngine.h"
 #include "strategy/StrategyFactory.h"
 #include "buy_and_hold/BuyAndHoldStrategy.h" // Include the strategy
+#include "sma_cross/SmaCrossStrategy.h"
 
 void printUsage(const StrategyFactory& factory) {
     std::cout << "Usage: ./backtest_runner <symbol> <resolution_minutes> <from_timestamp> <to_timestamp> <strategy_name>\n"
@@ -21,8 +22,11 @@ void printUsage(const StrategyFactory& factory) {
 int main(int argc, char* argv[]) {
     // --- Strategy Registration ---
     StrategyFactory factory;
-    factory.registerStrategy("buy_and_hold", []() {
-        return std::make_shared<BuyAndHoldStrategy>();
+    factory.registerStrategy("buy_and_hold", [](const StrategyConfig& config) {
+        return std::make_shared<BuyAndHoldStrategy>(config);
+    });
+    factory.registerStrategy("sma_cross", [](const StrategyConfig& config) {
+        return std::make_shared<SmaCrossStrategy>(config);
     });
     // --- Register new strategies here ---
 

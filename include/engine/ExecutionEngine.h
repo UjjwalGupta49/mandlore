@@ -2,56 +2,122 @@
 
 #include <memory>
 #include <vector>
+#include <iostream>
+#include <utility>
+#include <algorithm>
 #include "core/Bar.h"
 #include "core/Position.h"
 #include "core/Trade.h"
+#include "core/Account.h"
 #include "strategy/IStrategy.h"
 #include "engine/ThreadPool.h"
-#include <iostream>
-#include <utility>
 
 class ExecutionEngine {
 public:
     explicit ExecutionEngine(std::shared_ptr<IStrategy> strategy)
-        : strategy_{std::move(strategy)}, threadPool_{1} {}
+        : strategy_{std::move(strategy)}, 
+          account_{strategy_->getConfig().initialCapital},
+          threadPool_{1} {}
 
     void run(const std::vector<Bar>& bars) {
         if (bars.empty()) return;
-        strategy_->on_start(bars.front(), /*initialEquity=*/10000.0);
+
+        strategy_->on_start(bars.front(), account_.getBalance());
+
         for (const auto& bar : bars) {
+            checkSLTP(bar);
+
             auto fut = threadPool_.enqueue([this, &bar] {
-                return strategy_->on_bar(bar, positions_, accountEquity_);
+                return strategy_->on_bar(bar, positions_, account_.getBalance());
             });
             auto orders = fut.get();
             
-            // Process orders (minimal implementation)
             for (const auto& order : orders) {
                 processOrder(order, bar);
             }
         }
         strategy_->on_finish();
+        account_.printSummary();
     }
 
 private:
     void processOrder(const OrderRequest& order, const Bar& currentBar) {
-        if (order.side == Side::Long && positions_.empty()) {
+        if (!positions_.empty()) {
+            // Logic for when a position is already open.
+            // We only act if the new order is in the opposite direction, which signals a close.
+            if (positions_[0].side != order.side) {
+                closePosition(0, currentBar.close, currentBar.timestamp);
+            }
+        } else {
+            // Logic for when no position is open. Any order is an instruction to open.
             Position newPosition;
-            newPosition.side = Side::Long;
-            newPosition.entryPrice = currentBar.close; // Assume entry at close
+            newPosition.side = order.side;
+            newPosition.entryPrice = currentBar.close;
+            newPosition.entryTimestamp = currentBar.timestamp;
             newPosition.sizeAmount = order.sizeUsd / currentBar.close;
             newPosition.leverage = order.leverage;
-            positions_.push_back(newPosition);
+
+            if (order.stopLossPrice > 0) {
+                newPosition.stopLossPrice = order.stopLossPrice;
+            }
+            if (order.takeProfitPrice > 0) {
+                newPosition.takeProfitPrice = order.takeProfitPrice;
+            }
             
-            std::cout << "EXEC: Opened LONG position of " << newPosition.sizeAmount 
+            positions_.push_back(newPosition);
+            std::cout << "EXEC: Opened " << (order.side == Side::Long ? "LONG" : "SHORT") 
+                      << " position of " << newPosition.sizeAmount 
                       << " @ " << newPosition.entryPrice << std::endl;
         }
-        // NOTE: Closing positions, shorting, etc. not handled in this minimal version
+    }
+
+    void closePosition(std::size_t index, double exitPrice, std::int64_t exitTimestamp) {
+        if (index >= positions_.size()) return;
+
+        const auto& pos = positions_[index];
+        Trade trade;
+        trade.side = pos.side;
+        trade.sizeAmount = pos.sizeAmount;
+        trade.entryPrice = pos.entryPrice;
+        trade.entryTimestamp = pos.entryTimestamp;
+        trade.exitPrice = exitPrice;
+        trade.exitTimestamp = exitTimestamp;
+        
+        double pnl = (trade.exitPrice - trade.entryPrice) * trade.sizeAmount;
+        if (trade.side == Side::Short) {
+            pnl = -pnl;
+        }
+        trade.pnl = pnl;
+
+        account_.recordTrade(trade);
+        positions_.erase(positions_.begin() + index);
+
+        std::cout << "EXEC: Closed " << (trade.side == Side::Long ? "LONG" : "SHORT") 
+                  << " position @ " << exitPrice << " for a PNL of " << pnl << std::endl;
+    }
+
+    void checkSLTP(const Bar& currentBar) {
+        if (positions_.empty()) return;
+
+        const auto& pos = positions_[0];
+        if (pos.side == Side::Long) {
+            if (pos.stopLossPrice > 0 && currentBar.low <= pos.stopLossPrice) {
+                closePosition(0, pos.stopLossPrice, currentBar.timestamp);
+            } else if (pos.takeProfitPrice > 0 && currentBar.high >= pos.takeProfitPrice) {
+                closePosition(0, pos.takeProfitPrice, currentBar.timestamp);
+            }
+        } else { // Short position
+            if (pos.stopLossPrice > 0 && currentBar.high >= pos.stopLossPrice) {
+                closePosition(0, pos.stopLossPrice, currentBar.timestamp);
+            } else if (pos.takeProfitPrice > 0 && currentBar.low <= pos.takeProfitPrice) {
+                closePosition(0, pos.takeProfitPrice, currentBar.timestamp);
+            }
+        }
     }
 
     std::shared_ptr<IStrategy> strategy_;
+    Account account_;
     ThreadPool threadPool_;
 
     std::vector<Position> positions_{};
-    std::vector<Trade> trades_{};
-    double accountEquity_{10000.0};
 }; 

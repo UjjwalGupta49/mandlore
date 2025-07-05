@@ -2,11 +2,13 @@
 
 #include "strategy/IStrategy.h"
 #include "strategy/StrategyConfig.h"
+#include <vector>
+#include <deque>
+#include <cstddef>
 
-// A simple strategy that buys on the first bar and holds until the end.
-class BuyAndHoldStrategy : public IStrategy {
+class SmaCrossStrategy : public IStrategy {
 public:
-    explicit BuyAndHoldStrategy(const StrategyConfig& config);
+    explicit SmaCrossStrategy(const StrategyConfig& config);
 
     void on_start(const Bar& firstBar, double initialEquity) override;
 
@@ -19,6 +21,16 @@ public:
     const StrategyConfig& getConfig() const override;
 
 private:
-    bool invested_{false};
+    void updateSma(double price);
+
     StrategyConfig config_;
+    const std::size_t smaPeriod_{20};
+    const std::size_t smoothingPeriod_{14};
+
+    std::deque<double> priceHistory_;
+    std::deque<double> smaHistory_;
+    double currentSma_{0.0};
+    
+    bool wasPriceAboveSma_{false};
+    bool isInitialized_{false};
 }; 

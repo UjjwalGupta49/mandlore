@@ -1,5 +1,6 @@
 #pragma once
 
+#include "strategy/StrategyConfig.h"
 #include <vector>
 #include "core/Bar.h"
 #include "core/Position.h"
@@ -16,4 +17,6 @@ public:
                                              double accountEquity) = 0;
 
     virtual void on_finish() = 0;
+
+    virtual const StrategyConfig& getConfig() const = 0;
 };

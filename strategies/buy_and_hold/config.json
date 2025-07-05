@@ -1,0 +1,6 @@
+{
+    "initialCapital": 50000.0,
+    "stopLossPercent": 2.0,
+    "takeProfitPercent": 5.0,
+    "perTradeSize": 10000.0
+} 

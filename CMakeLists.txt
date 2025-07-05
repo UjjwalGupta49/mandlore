@@ -31,6 +31,7 @@ target_include_directories(backtest_engine INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
 # ----------------------------------------------------------------------------------
 target_sources(backtest_engine INTERFACE
     # --- Add .cpp files below ---
+    src/core/Account.cpp
     src/data/CsvPriceSource.cpp
     src/data/PythPriceSource.cpp
     src/data/PriceManager.cpp
@@ -96,6 +97,7 @@ target_compile_options(backtest_runner PRIVATE ${MY_PROJECT_COMPILE_OPTIONS})
 target_link_libraries(backtest_runner PRIVATE 
     backtest_engine
     buy_and_hold_strategy
+    sma_cross_strategy
     Threads::Threads # For std::thread
 )
 
@@ -105,4 +107,9 @@ target_link_libraries(backtest_runner PRIVATE
 add_library(buy_and_hold_strategy strategies/buy_and_hold/BuyAndHoldStrategy.cpp)
 target_include_directories(buy_and_hold_strategy PUBLIC strategies)
 target_compile_options(buy_and_hold_strategy PRIVATE ${MY_PROJECT_COMPILE_OPTIONS})
-target_link_libraries(buy_and_hold_strategy PRIVATE backtest_engine) 
+target_link_libraries(buy_and_hold_strategy PRIVATE backtest_engine)
+
+add_library(sma_cross_strategy strategies/sma_cross/SmaCrossStrategy.cpp)
+target_include_directories(sma_cross_strategy PUBLIC strategies)
+target_compile_options(sma_cross_strategy PRIVATE ${MY_PROJECT_COMPILE_OPTIONS})
+target_link_libraries(sma_cross_strategy PRIVATE backtest_engine) 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "strategy/IStrategy.h"
+#include "strategy/StrategyConfig.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -10,7 +11,7 @@
 // A factory for creating strategy instances from a string name.
 class StrategyFactory {
 public:
-    using TCreateMethod = std::function<std::shared_ptr<IStrategy>()>;
+    using TCreateMethod = std::function<std::shared_ptr<IStrategy>(const StrategyConfig&)>;
 
     // Registers a new strategy creation method.
     void registerStrategy(const std::string& name, TCreateMethod createMethod);
