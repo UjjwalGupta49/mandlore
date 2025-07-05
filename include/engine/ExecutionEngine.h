@@ -7,6 +7,8 @@
 #include "core/Trade.h"
 #include "strategy/IStrategy.h"
 #include "engine/ThreadPool.h"
+#include <iostream>
+#include <utility>
 
 class ExecutionEngine {
 public:
@@ -21,12 +23,31 @@ public:
                 return strategy_->on_bar(bar, positions_, accountEquity_);
             });
             auto orders = fut.get();
-            // TODO: apply orders to positions_, update trades_ and accountEquity_
+            
+            // Process orders (minimal implementation)
+            for (const auto& order : orders) {
+                processOrder(order, bar);
+            }
         }
         strategy_->on_finish();
     }
 
 private:
+    void processOrder(const OrderRequest& order, const Bar& currentBar) {
+        if (order.side == Side::Long && positions_.empty()) {
+            Position newPosition;
+            newPosition.side = Side::Long;
+            newPosition.entryPrice = currentBar.close; // Assume entry at close
+            newPosition.sizeAmount = order.sizeUsd / currentBar.close;
+            newPosition.leverage = order.leverage;
+            positions_.push_back(newPosition);
+            
+            std::cout << "EXEC: Opened LONG position of " << newPosition.sizeAmount 
+                      << " @ " << newPosition.entryPrice << std::endl;
+        }
+        // NOTE: Closing positions, shorting, etc. not handled in this minimal version
+    }
+
     std::shared_ptr<IStrategy> strategy_;
     ThreadPool threadPool_;
 
