@@ -30,10 +30,18 @@ public:
             auto fut = threadPool_.enqueue([this, &bar] {
                 return strategy_->on_bar(bar, positions_, account_.getBalance());
             });
-            auto orders = fut.get();
+            auto action = fut.get();
             
-            for (const auto& order : orders) {
-                processOrder(order, bar);
+            // Process close signals first
+            if (action.closeCurrentPosition && !positions_.empty()) {
+                closePosition(0, bar.close, bar.timestamp);
+            }
+
+            // Process open signals, only if no position is currently open
+            if (positions_.empty()) {
+                for (const auto& order : action.openRequests) {
+                    processOpenOrder(order, bar);
+                }
             }
         }
         strategy_->on_finish();
@@ -41,34 +49,25 @@ public:
     }
 
 private:
-    void processOrder(const OrderRequest& order, const Bar& currentBar) {
-        if (!positions_.empty()) {
-            // Logic for when a position is already open.
-            // We only act if the new order is in the opposite direction, which signals a close.
-            if (positions_[0].side != order.side) {
-                closePosition(0, currentBar.close, currentBar.timestamp);
-            }
-        } else {
-            // Logic for when no position is open. Any order is an instruction to open.
-            Position newPosition;
-            newPosition.side = order.side;
-            newPosition.entryPrice = currentBar.close;
-            newPosition.entryTimestamp = currentBar.timestamp;
-            newPosition.sizeAmount = order.sizeUsd / currentBar.close;
-            newPosition.leverage = order.leverage;
+    void processOpenOrder(const OrderRequest& order, const Bar& currentBar) {
+        Position newPosition;
+        newPosition.side = order.side;
+        newPosition.entryPrice = currentBar.close;
+        newPosition.entryTimestamp = currentBar.timestamp;
+        newPosition.sizeAmount = order.sizeUsd / currentBar.close;
+        newPosition.leverage = order.leverage;
 
-            if (order.stopLossPrice > 0) {
-                newPosition.stopLossPrice = order.stopLossPrice;
-            }
-            if (order.takeProfitPrice > 0) {
-                newPosition.takeProfitPrice = order.takeProfitPrice;
-            }
-            
-            positions_.push_back(newPosition);
-            std::cout << "EXEC: Opened " << (order.side == Side::Long ? "LONG" : "SHORT") 
-                      << " position of " << newPosition.sizeAmount 
-                      << " @ " << newPosition.entryPrice << std::endl;
+        if (order.stopLossPrice > 0) {
+            newPosition.stopLossPrice = order.stopLossPrice;
         }
+        if (order.takeProfitPrice > 0) {
+            newPosition.takeProfitPrice = order.takeProfitPrice;
+        }
+        
+        positions_.push_back(newPosition);
+        std::cout << "EXEC: Opened " << (order.side == Side::Long ? "LONG" : "SHORT") 
+                    << " position of " << newPosition.sizeAmount 
+                    << " @ " << newPosition.entryPrice << std::endl;
     }
 
     void closePosition(std::size_t index, double exitPrice, std::int64_t exitTimestamp) {

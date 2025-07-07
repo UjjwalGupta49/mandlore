@@ -9,16 +9,15 @@ void BuyAndHoldStrategy::on_start(const Bar&, double) {
     std::cout << "Stop loss: " << config_.stopLossPercent << "%, Take profit: " << config_.takeProfitPercent << "%" << std::endl;
 }
 
-std::vector<OrderRequest> BuyAndHoldStrategy::on_bar(const Bar& currentBar,
-                                                         const std::vector<Position>& openPositions,
-                                                         double) {
-    std::vector<OrderRequest> orders;
+StrategyAction BuyAndHoldStrategy::on_bar(const Bar& currentBar,
+                                          const std::vector<Position>& openPositions,
+                                          double) {
+    StrategyAction action;
     if (!invested_ && openPositions.empty()) {
         OrderRequest order;
         order.side = Side::Long;
         order.sizeUsd = config_.perTradeSize;
 
-        // Set SL/TP based on config
         const double entryPrice = currentBar.close;
         if (config_.stopLossPercent > 0) {
             order.stopLossPrice = entryPrice * (1.0 - (config_.stopLossPercent / 100.0));
@@ -27,12 +26,12 @@ std::vector<OrderRequest> BuyAndHoldStrategy::on_bar(const Bar& currentBar,
             order.takeProfitPrice = entryPrice * (1.0 + (config_.takeProfitPercent / 100.0));
         }
 
-        orders.push_back(order);
+        action.openRequests.push_back(order);
         invested_ = true;
         std::cout << "STRAT: Placing buy order for " << order.sizeUsd << " USD @ " << entryPrice 
                   << " SL: " << order.stopLossPrice << " TP: " << order.takeProfitPrice << std::endl;
     }
-    return orders;
+    return action;
 }
 
 void BuyAndHoldStrategy::on_finish() {

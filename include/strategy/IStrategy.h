@@ -5,6 +5,7 @@
 #include "core/Bar.h"
 #include "core/Position.h"
 #include "core/OrderRequest.h"
+#include "strategy/StrategyAction.h"
 
 class IStrategy {
 public:
@@ -12,9 +13,9 @@ public:
 
     virtual void on_start(const Bar& firstBar, double initialEquity) = 0;
 
-    virtual std::vector<OrderRequest> on_bar(const Bar& currentBar,
-                                             const std::vector<Position>& openPositions,
-                                             double accountEquity) = 0;
+    virtual StrategyAction on_bar(const Bar& currentBar,
+                                  const std::vector<Position>& openPositions,
+                                  double accountEquity) = 0;
 
     virtual void on_finish() = 0;
 

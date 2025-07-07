@@ -10,9 +10,9 @@ public:
 
     void on_start(const Bar& firstBar, double initialEquity) override;
 
-    std::vector<OrderRequest> on_bar(const Bar& currentBar,
-                                     const std::vector<Position>& openPositions,
-                                     double accountEquity) override;
+    StrategyAction on_bar(const Bar& currentBar,
+                          const std::vector<Position>& openPositions,
+                          double accountEquity) override;
 
     void on_finish() override;
 
