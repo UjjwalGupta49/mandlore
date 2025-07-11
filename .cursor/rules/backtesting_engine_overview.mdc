@@ -1,0 +1,98 @@
+# Backtesting Engine Overview
+
+This codebase implements a backtesting engine for trading strategies. Below is an overview of its key components, how to develop and test new strategies, and the features supported by the engine.
+
+## Core Components:
+
+*   **`PriceManager`**: (Located in `include/data/PriceManager.h` and `src/data/PriceManager.cpp`) Handles loading historical price data (bars) from a `PriceSource` (e.g., `CsvPriceSource`, `PythPriceSource`).
+*   **`Aggregator`**: (Located in `include/data/Aggregator.h` and `src/data/Aggregator.cpp`) Aggregates raw 1-minute bar data into higher resolutions (e.g., 5-minute, 1-hour bars) as required by the strategy.
+*   **`IStrategy`**: (Located in `include/strategy/IStrategy.h`) An abstract interface that all trading strategies must implement. It defines the contract for strategy lifecycle methods (`on_start`, `on_bar`, `on_finish`) and configuration (`getConfig`).
+*   **`StrategyFactory`**: (Located in `include/strategy/StrategyFactory.h` and `src/strategy/StrategyFactory.cpp`) A factory class responsible for registering and creating instances of various trading strategies by their name.
+*   **`ExecutionEngine`**: (Located in `include/engine/ExecutionEngine.h`) The core of the backtesting engine. It takes aggregated bars and a strategy, then simulates trading by iterating through bars, processing strategy signals, managing positions, and tracking account balance and PnL.
+*   **`BacktestManager`**: (Located in `include/engine/BacktestManager.h`) A high-level class that orchestrates the backtesting process. It takes a `PriceSource` and an `IStrategy` and runs the backtest.
+
+## How to Create a New Trading Strategy:
+
+To create a new trading strategy, follow these steps:
+
+1.  **Define your Strategy Class**: Create a new `.h` and `.cpp` file (e.g., `MyStrategy.h`, `MyStrategy.cpp`) within the `strategies/` directory. Your strategy class must inherit from `IStrategy`.
+
+    ```cpp
+    // Example: include/strategy/IStrategy.h
+    // ... existing code ...
+    virtual void on_start(const Bar& firstBar, double initialEquity) = 0;
+    virtual StrategyAction on_bar(const Bar& currentBar,
+                                  const std::vector<Position>& openPositions,
+                                  double accountEquity) = 0;
+    virtual void on_finish() = 0;
+    virtual const StrategyConfig& getConfig() const = 0;
+    // ... existing code ...
+    ```
+
+2.  **Implement `on_start`**: This method is called once at the beginning of the backtest. Use it to initialize any strategy-specific variables.
+
+3.  **Implement `on_bar`**: This is the main logic of your strategy. It's called for each bar of data during the backtest. You receive the `currentBar`, `openPositions` (a vector of currently open positions), and `accountEquity`. Your strategy should return a `StrategyAction` object, which can contain `openRequests` (to open new positions) and `closeCurrentPosition` (to close the current open position).
+
+    ```cpp
+    // Example: include/strategy/StrategyAction.h
+    // ... existing code ...
+    struct StrategyAction {
+        std::vector<OrderRequest> openRequests; // Requests to open new positions
+        bool closeCurrentPosition; // Set to true to close the current position
+
+        StrategyAction() : closeCurrentPosition(false) {}
+    };
+    // ... existing code ...
+    ```
+
+4.  **Implement `on_finish`**: This method is called once at the end of the backtest. Use it for any final calculations or cleanup.
+
+5.  **Implement `getConfig`**: Return a `StrategyConfig` object, which defines parameters like `initialCapital`.
+
+6.  **Register Your Strategy**: In `main.cpp`, add your strategy to the `StrategyFactory`:
+
+    ```cpp
+    // Example: main.cpp
+    // ... existing code ...
+    factory.registerStrategy("my_new_strategy", [](const StrategyConfig& config) {
+        return std::make_shared<MyNewStrategy>(config);
+    });
+    // --- Register new strategies here ---
+    // ... existing code ...
+    ```
+
+7. **Create a `config.json`**: For your new strategy, create a `config.json` file in its strategy directory (e.g., `strategies/my_new_strategy/config.json`). This file can hold any parameters specific to your strategy. The `StrategyConfig` struct in `include/strategy/StrategyConfig.h` defines basic parameters that are common to all strategies. You might extend this or create a custom config for your strategy.
+
+## How to Test a New Trading Strategy:
+
+Once your strategy is implemented and registered, you can test it using the `backtest_runner` executable. Compile the project using `build.sh`.
+
+Example usage (as seen in `main.cpp` and `build.sh`):
+
+```bash
+./build/backtest_runner <symbol> <resolution_minutes> <from_timestamp> <to_timestamp> <strategy_name>
+```
+
+*   `<symbol>`: The trading symbol (e.g., `Crypto.BTC/USD`).
+*   `<resolution_minutes>`: The desired bar resolution for your strategy (e.g., `1`, `5`, `60`).
+*   `<from_timestamp>`: Start timestamp in Unix epoch seconds.
+*   `<to_timestamp>`: End timestamp in Unix epoch seconds.
+*   `<strategy_name>`: The name you registered your strategy with in `main.cpp` (e.g., `my_new_strategy`).
+
+Example:
+`./build/backtest_runner Crypto.SOL/USD 60 1672531200 1735689600 sma_cross`
+
+## Features Supported by the Backtesting Engine:
+
+The `ExecutionEngine` provides the following features:
+
+*   **Data Ingestion and Aggregation**: Supports loading 1-minute bar data from various sources and aggregating it to a user-defined resolution.
+*   **Strategy Execution**: Runs trading strategies bar by bar, calling `on_bar` for each time step.
+*   **Position Management**: Handles opening and closing of both long and short positions.
+    *   **Open Positions**: Processes `OrderRequest` objects generated by the strategy to open new positions. Only one position is managed at a time.
+    *   **Close Positions**: Strategies can signal to close the current position. Positions are also automatically closed if Stop-Loss or Take-Profit conditions are met.
+*   **Stop-Loss (SL) and Take-Profit (TP)**: Supports setting SL and TP prices for positions, which automatically trigger position closures.
+*   **Account Tracking**: Manages the backtest account, including initial capital, tracking equity, and calculating PnL (Profit and Loss) for each trade.
+*   **Trade Recording**: Records individual trades with details like entry/exit price, size, and PnL.
+*   **Threaded Strategy Execution**: Utilizes a `ThreadPool` to potentially execute strategy logic in a separate thread (though currently configured with a single thread for `on_bar` calls).
+*   **Summary Reporting**: Prints a summary of the account performance at the end of the backtest.

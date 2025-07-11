@@ -67,7 +67,9 @@ private:
         positions_.push_back(newPosition);
         std::cout << "EXEC: Opened " << (order.side == Side::Long ? "LONG" : "SHORT") 
                     << " position of " << newPosition.sizeAmount 
-                    << " @ " << newPosition.entryPrice << std::endl;
+                    << " @ " << newPosition.entryPrice 
+                    << " SL: " << newPosition.stopLossPrice 
+                    << " TP: " << newPosition.takeProfitPrice << std::endl;
     }
 
     void closePosition(std::size_t index, double exitPrice, std::int64_t exitTimestamp) {
