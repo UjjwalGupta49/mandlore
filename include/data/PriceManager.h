@@ -5,7 +5,8 @@
 #include <vector>
 
 // Orchestrates loading of price data, using a local CSV cache
-// and falling back to a remote API if the cache is empty.
+// and falling back to remote APIs if the cache is empty.
+// Combines OHLC data from Pyth with volume and num_trades from Binance.
 class PriceManager {
 public:
     PriceManager(std::string symbol, std::string resolution, long from, long to);
@@ -21,4 +22,7 @@ private:
 
     std::string getCsvPath() const;
     void cacheDataToCsv(const std::vector<Bar>& bars) const;
+    
+    // Combine OHLC data from Pyth with volume/trades data from Binance
+    std::vector<Bar> combineData(const std::vector<Bar>& pythBars, const std::vector<Bar>& binanceBars) const;
 }; 

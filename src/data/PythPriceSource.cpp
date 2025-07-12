@@ -161,6 +161,7 @@ std::vector<Bar> PythPriceSource::parseJsonResponse(const std::string& jsonBody)
             bar.low = lows[i].get<double>();
             bar.close = closes[i].get<double>();
             bar.volume = volumes[i].get<double>();
+            bar.num_trades = 0;  // Pyth doesn't provide num_trades data
             bars.push_back(bar);
         }
 

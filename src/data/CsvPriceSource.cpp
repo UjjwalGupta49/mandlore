@@ -24,7 +24,7 @@ std::vector<Bar> CsvPriceSource::fetch() {
         std::string cell;
         Bar bar;
         
-        // timestamp,open,high,low,close,volume
+        // timestamp,open,high,low,close,volume,num_trades
         std::getline(ss, cell, ',');
         bar.timestamp = std::stoll(cell);
         std::getline(ss, cell, ',');
@@ -37,6 +37,13 @@ std::vector<Bar> CsvPriceSource::fetch() {
         bar.close = std::stod(cell);
         std::getline(ss, cell, ',');
         bar.volume = std::stod(cell);
+        
+        // Handle num_trades field (optional for backward compatibility)
+        if (std::getline(ss, cell, ',')) {
+            bar.num_trades = std::stoll(cell);
+        } else {
+            bar.num_trades = 0;  // Default for old CSV files
+        }
 
         bars.push_back(bar);
     }

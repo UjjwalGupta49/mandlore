@@ -34,6 +34,7 @@ target_sources(backtest_engine INTERFACE
     src/core/Account.cpp
     src/data/CsvPriceSource.cpp
     src/data/PythPriceSource.cpp
+    src/data/BinancePriceSource.cpp
     src/data/PriceManager.cpp
     src/data/Aggregator.cpp
     src/strategy/StrategyFactory.cpp

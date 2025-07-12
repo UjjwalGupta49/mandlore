@@ -9,4 +9,5 @@ struct Bar {
     double low{0.0};
     double close{0.0};
     double volume{0.0};
+    std::int64_t num_trades{0};  // number of trades
 }; 

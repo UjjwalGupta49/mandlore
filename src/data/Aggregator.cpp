@@ -24,6 +24,7 @@ std::vector<Bar> Aggregator::aggregate(const std::vector<Bar>& raw) const {
             // Start new aggregate bar
             currentAggBar = bar;
             currentAggBar.volume = 0; // Reset volume to sum up constituent volumes
+            currentAggBar.num_trades = 0; // Reset num_trades to sum up constituent trades
             long barTimeBucket = bar.timestamp / resolutionMillis;
             currentAggBar.timestamp = barTimeBucket * resolutionMillis;
             nextTimestampBoundary = currentAggBar.timestamp + resolutionMillis;
@@ -34,6 +35,7 @@ std::vector<Bar> Aggregator::aggregate(const std::vector<Bar>& raw) const {
         currentAggBar.low = std::min(currentAggBar.low, bar.low);
         currentAggBar.close = bar.close;
         currentAggBar.volume += bar.volume;
+        currentAggBar.num_trades += bar.num_trades;
     }
 
     // Add the last aggregated bar
