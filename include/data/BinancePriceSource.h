@@ -32,6 +32,14 @@ private:
 
     // Resolution-based chunking limits (in seconds) - Binance allows up to 1000 candles per request
     static const std::map<int, long> RESOLUTION_LIMITS;
+    
+    // Retry configuration - increased delays to handle IP bans
+    static const int MAX_RETRIES = 3;
+    static const int INITIAL_RETRY_DELAY_MS = 30000; // 30 seconds for IP ban recovery
+    static const int MAX_RETRY_DELAY_MS = 300000; // 5 minutes maximum delay
+    
+    // Helper method for retrying failed requests
+    std::vector<Bar> fetchSegmentWithRetry(long from, long to, int retryCount = 0);
 
     // Give test class access to private members
     friend class BinancePriceSourceTest;

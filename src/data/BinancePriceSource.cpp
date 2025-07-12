@@ -6,18 +6,19 @@
 #include <stdexcept>
 #include <thread>
 #include <future>
+#include <chrono>
 
 #include "engine/ThreadPool.h"
 
 using json = nlohmann::json;
 
-// Binance allows up to 1000 candles per request, so we calculate based on resolution
+// Binance allows up to 1500 candles per request, so we calculate based on resolution
 const std::map<int, long> BinancePriceSource::RESOLUTION_LIMITS = {
-    {1, 1000 * 60},          // 1-min: 1000 candles = ~16.7 hours
-    {5, 1000 * 5 * 60},      // 5-min: 1000 candles = ~3.5 days
-    {15, 1000 * 15 * 60},    // 15-min: 1000 candles = ~10.4 days
-    {60, 1000 * 60 * 60},    // 1-hour: 1000 candles = ~41.7 days
-    {240, 1000 * 4 * 60 * 60}, // 4-hour: 1000 candles = ~166 days
+    {1, 1500 * 60},          // 1-min: 1500 candles = ~25 hours
+    {5, 1500 * 5 * 60},      // 5-min: 1500 candles = ~5.2 days
+    {15, 1500 * 15 * 60},    // 15-min: 1500 candles = ~15.6 days
+    {60, 1500 * 60 * 60},    // 1-hour: 1500 candles = ~62.5 days
+    {240, 1500 * 4 * 60 * 60}, // 4-hour: 1500 candles = ~250 days
 };
 const long ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
 
@@ -46,13 +47,20 @@ std::vector<Bar> BinancePriceSource::fetch() {
     if (totalDuration <= resolutionLimit) {
         // Fetch in a single request
         std::cout << "Binance: Total duration within limit. Fetching in a single request." << std::endl;
-        allBars = fetchSegment(from_, to_, false);
+        allBars = fetchSegmentWithRetry(from_, to_, 0);
     } else {
         // Fetch in segments in parallel
         std::cout << "Binance: Total duration exceeds limit. Fetching in parallel segments." << std::endl;
         
-        // Cap concurrency to avoid overwhelming the API endpoint
-        const size_t max_threads = 8;
+        // Calculate number of segments for rate limit warning
+        long numSegments = (totalDuration + resolutionLimit - 1) / resolutionLimit; // Ceiling division
+        if (numSegments > 10) {
+            std::cout << "Binance: Warning - Large dataset (" << numSegments 
+                      << " segments) may approach rate limits. Consider smaller time ranges." << std::endl;
+        }
+        
+        // Cap concurrency to avoid overwhelming the API endpoint (Binance rate limit: 240 req/min)
+        const size_t max_threads = 2;  // Reduced from 8 to avoid IP bans
         const size_t num_threads = (std::min)(max_threads, static_cast<size_t>(std::thread::hardware_concurrency()));
         ThreadPool pool(num_threads);
         
@@ -62,22 +70,23 @@ std::vector<Bar> BinancePriceSource::fetch() {
         while (currentFrom < to_) {
             long segmentTo = std::min(currentFrom + resolutionLimit, to_);
             
-            std::cout << "Binance: Queuing segment from " << currentFrom << " to " << segmentTo << std::endl;
+            std::cout << "Binance: Queuing segment from " << currentFrom << " to " << segmentTo 
+                      << " (limit=1500, 500ms delay)" << std::endl;
             
             futures.push_back(
-                pool.enqueue(&BinancePriceSource::fetchSegment, this, currentFrom, segmentTo, false)
+                pool.enqueue(&BinancePriceSource::fetchSegmentWithRetry, this, currentFrom, segmentTo, 0)
             );
             
             currentFrom = segmentTo;
         }
 
         // Collect results from all futures
-        for(auto& future : futures) {
+        for(size_t i = 0; i < futures.size(); ++i) {
             try {
-                std::vector<Bar> segmentBars = future.get();
+                std::vector<Bar> segmentBars = futures[i].get();
                 allBars.insert(allBars.end(), segmentBars.begin(), segmentBars.end());
             } catch (const std::exception& e) {
-                std::cerr << "Binance: A segment failed to fetch: " << e.what() << ". Aborting." << std::endl;
+                std::cerr << "Binance: Segment " << i << " failed after all retry attempts: " << e.what() << ". Aborting." << std::endl;
                 throw; 
             }
         }
@@ -99,6 +108,10 @@ std::vector<Bar> BinancePriceSource::fetch() {
 }
 
 std::vector<Bar> BinancePriceSource::fetchSegment(long from, long to, bool addDelay) {
+    // Always add delay to respect Binance rate limits (240 req/min = ~250ms between requests)
+    // Using 500ms to be conservative and avoid IP bans
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
     if (addDelay) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
@@ -115,13 +128,63 @@ std::vector<Bar> BinancePriceSource::fetchSegment(long from, long to, bool addDe
                                                {"interval", binanceInterval},
                                                {"startTime", std::to_string(fromMs)},
                                                {"endTime", std::to_string(toMs)},
-                                               {"limit", "1000"}});
+                                               {"limit", "1500"}});
     
     if (r.status_code != 200) {
-        throw std::runtime_error("Failed to fetch segment from Binance API: " + r.error.message);
+        std::string errorDetail = "HTTP " + std::to_string(r.status_code) + 
+                                " - URL: " + r.url.str() + 
+                                " - Error: " + r.error.message;
+        if (!r.text.empty()) {
+            errorDetail += " - Response: " + r.text;
+        }
+        throw std::runtime_error("Failed to fetch segment from Binance API: " + errorDetail);
     }
     
     return parseJsonResponse(r.text);
+}
+
+std::vector<Bar> BinancePriceSource::fetchSegmentWithRetry(long from, long to, int retryCount) {
+    try {
+        // Attempt to fetch the segment
+        return fetchSegment(from, to, false);
+    } catch (const std::exception& e) {
+        std::string errorMsg = e.what();
+        
+        // Log the error with details
+        std::cerr << "Binance: Fetch attempt " << (retryCount + 1) << " failed for segment [" 
+                  << from << " to " << to << "]: " << errorMsg << std::endl;
+        
+        // Check if we should retry
+        if (retryCount < MAX_RETRIES) {
+            // Calculate delay with exponential backoff
+            int delayMs = INITIAL_RETRY_DELAY_MS * (1 << retryCount); // 2^retryCount
+            if (delayMs > MAX_RETRY_DELAY_MS) {
+                delayMs = MAX_RETRY_DELAY_MS;
+            }
+            
+            // Special handling for IP bans (HTTP 418) - use maximum delay immediately
+            if (errorMsg.find("HTTP 418") != std::string::npos || 
+                errorMsg.find("banned until") != std::string::npos) {
+                delayMs = MAX_RETRY_DELAY_MS;
+                std::cout << "Binance: IP ban detected. Using maximum delay for recovery." << std::endl;
+            }
+            
+            std::cout << "Binance: Retrying in " << (delayMs / 1000) << " seconds (attempt " 
+                      << (retryCount + 2) << "/" << (MAX_RETRIES + 1) << ")..." << std::endl;
+            
+            // Wait before retrying
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+            
+            // Recursive retry
+            return fetchSegmentWithRetry(from, to, retryCount + 1);
+        } else {
+            // Max retries exceeded
+            std::string finalError = "Binance: Max retries (" + std::to_string(MAX_RETRIES) + 
+                                   ") exceeded for segment [" + std::to_string(from) + " to " + 
+                                   std::to_string(to) + "]. Last error: " + errorMsg;
+            throw std::runtime_error(finalError);
+        }
+    }
 }
 
 std::vector<Bar> BinancePriceSource::parseJsonResponse(const std::string& jsonBody) {
